@@ -491,9 +491,16 @@ jobs:
             echo "CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y" >> ./arch/arm64/configs/gki_defconfig
             echo "CONFIG_NETFILTER_XT_TARGET_LOG=y" >> ./arch/arm64/configs/gki_defconfig
             echo "CONFIG_NETFILTER_XT_MATCH_RECENT=y" >> ./arch/arm64/configs/gki_defconfig
+            # ===== Droidspaces v7 自检全绿所需的三项(原脚本缺失,导致 macvlan/CPU限制/进程数限制 报✗) =====
+            # Macvlan 支持(--net=macvlan)；必须内建=y，写成模块不会被自动加载
+            echo "CONFIG_MACVLAN=y" >> ./arch/arm64/configs/gki_defconfig
+            # CPU 限制支持(--cpus -> cpu.max)；依赖 CGROUP_SCHED + FAIR_GROUP_SCHED(GKI 已开启)
+            # 注意：内核 cmdline 不能带 cgroup_disable=cpu(本机 cmdline 只有 cgroup_disable=pressure，安全)
+            echo "CONFIG_CFS_BANDWIDTH=y" >> ./arch/arm64/configs/gki_defconfig
+            # 进程数限制支持(--pids-limit -> pids.max)
+            echo "CONFIG_CGROUP_PIDS=y" >> ./arch/arm64/configs/gki_defconfig
             # 未经测试的配置选项，可能导致bug
             #echo "CONFIG_CGROUP_DEVICE=y" >> ./arch/arm64/configs/gki_defconfig
-            #echo "CONFIG_CGROUP_PIDS=y" >> ./arch/arm64/configs/gki_defconfig
             #echo "CONFIG_FW_LOADER_COMPRESS=y" >> ./arch/arm64/configs/gki_defconfig
             #echo "CONFIG_BRIDGE_NETFILTER=y" >> ./arch/arm64/configs/gki_defconfig
             #echo "CONFIG_NF_TABLES=y" >> ./arch/arm64/configs/gki_defconfig
