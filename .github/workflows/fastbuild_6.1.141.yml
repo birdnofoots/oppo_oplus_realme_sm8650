@@ -90,6 +90,11 @@ on:
         required: true
         type: boolean
         default: 'false'
+      no_ccache:
+        description: '完全禁用 ccache(强制全新编译, 用于排查ccache缓存复用导致的产物不一致/符号CRC错乱; 耗时约40-60分钟)'
+        required: false
+        type: boolean
+        default: 'false'
       kernel_suffix:
         description: '内核后缀(留空默认,开头别加连字符,勿加空格等影响指令运行的保留字符)'
         required: false
@@ -170,6 +175,7 @@ jobs:
           echo "CCACHE_REAL_KEY=$CCACHE_REAL_KEY" >> $GITHUB_ENV
 
       - name: 载入当前版本内核的 ccache缓存
+        if: ${{ !inputs.no_ccache }}
         uses: actions/cache@v5
         id: ccache-restore
         with:
@@ -180,6 +186,7 @@ jobs:
             ${{ env.CCACHE_REAL_KEY }}-
 
       - name: 拉取公共预置 ccache 缓存
+        if: ${{ !inputs.no_ccache }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -563,6 +570,10 @@ jobs:
       - name: 构建内核
         run: |
           WORKDIR="$(pwd)"
+          if [[ "${{ inputs.no_ccache }}" == "true" ]]; then
+            export CCACHE_DISABLE=1
+            echo ">>> no_ccache=true : ccache 已禁用，本次为全新编译"
+          fi
           export PATH="/usr/lib/ccache:$PATH"
           export PATH="$WORKDIR/kernel_workspace/clang20/bin:$PATH"
           export PATH="$WORKDIR/kernel_workspace/build-tools/bin:$PATH"
@@ -645,7 +656,7 @@ jobs:
           df -h
 
       - name: 保存新的 ccache 缓存
-        if: inputs.ccache_update || steps.ccache-restore.outputs.cache-hit != 'true'
+        if: ${{ !inputs.no_ccache && (inputs.ccache_update || steps.ccache-restore.outputs.cache-hit != 'true') }}
         uses: actions/cache/save@v5
         with:
           path: ${{ env.CCACHE_DIR }}
