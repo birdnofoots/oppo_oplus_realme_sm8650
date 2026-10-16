@@ -313,6 +313,13 @@ if [[ "$APPLY_DROIDSPACES" == [sSeE] ]]; then
   echo "CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y" >> "$DEFCONFIG_FILE"
   echo "CONFIG_NETFILTER_XT_TARGET_LOG=y" >> "$DEFCONFIG_FILE"
   echo "CONFIG_NETFILTER_XT_MATCH_RECENT=y" >> "$DEFCONFIG_FILE"
+  # ===== Droidspaces v7 自检全绿所需的三项 =====
+  # Macvlan 支持(--net=macvlan)；必须内建=y，模块形式不会被自动加载
+  echo "CONFIG_MACVLAN=y" >> "$DEFCONFIG_FILE"
+  # CPU 限制支持(--cpus -> cpu.max)；依赖 CGROUP_SCHED + FAIR_GROUP_SCHED(GKI 已开启)
+  echo "CONFIG_CFS_BANDWIDTH=y" >> "$DEFCONFIG_FILE"
+  # 进程数限制支持(--pids-limit -> pids.max)
+  echo "CONFIG_CGROUP_PIDS=y" >> "$DEFCONFIG_FILE"
   # 开启 NTSync
   echo "CONFIG_NTSYNC=y" >> "$DEFCONFIG_FILE"
   cd common
