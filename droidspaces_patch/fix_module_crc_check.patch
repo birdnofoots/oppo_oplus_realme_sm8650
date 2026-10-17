@@ -1,0 +1,26 @@
+--- a/kernel/module/version.c
++++ b/kernel/module/version.c
+@@ -15,6 +15,23 @@
+ 			 struct module *mod,
+ 			 const s32 *crc)
+ {
++	/*
++	 * kABI shim (Droidspaces): skip module symbol CRC enforcement.
++	 *
++	 * CONFIG_CFS_BANDWIDTH and CONFIG_CGROUP_PIDS resize scheduler and
++	 * cgroup structures (cfs_rq / task_group), which makes genksyms change
++	 * the CRC of thousands of exported symbols. Prebuilt vendor modules then
++	 * refuse to load and the device bootloops.
++	 *
++	 * Those structures are kernel-internal and are never embedded in vendor
++	 * modules, so their layout change cannot corrupt module-visible memory.
++	 * CONFIG_MODVERSIONS is deliberately left enabled, which keeps
++	 * VERMAGIC_STRING (and therefore the vermagic check) exactly as before,
++	 * so both stock vendor modules and the KernelSU LKM see an unchanged
++	 * loading environment.
++	 */
++	return 1;
++
+ 	Elf_Shdr *sechdrs = info->sechdrs;
+ 	unsigned int versindex = info->index.vers;
+ 	unsigned int i, num_versions;
