@@ -109,6 +109,11 @@ on:
         required: false
         type: boolean
         default: 'false'
+      wifi_modules:
+        description: '额外编译 USB 无线网卡驱动模块(ath9k_htc/rt2800usb/rtl8187/rtl8xxxu/mt7601u/carl9170/rt73usb)并连同固件打包。只产出 .ko，不需要刷内核，insmod 即可'
+        required: false
+        type: boolean
+        default: 'false'
       kernel_suffix:
         description: '内核后缀(留空默认,开头别加连字符,勿加空格等影响指令运行的保留字符)'
         required: false
@@ -571,6 +576,34 @@ jobs:
             fi
           fi
 
+      - name: 启用 USB 无线网卡驱动模块
+        if: ${{ inputs.wifi_modules }}
+        run: |
+          echo "正在配置 USB 无线网卡驱动（只编 .ko，不改变 vmlinux）…"
+          cd kernel_workspace/common
+          D=./arch/arm64/configs/gki_defconfig
+          # 运行时已有的 cfg80211/mac80211 是原厂模块，这里只为让驱动能作为模块编译出来
+          echo "CONFIG_CFG80211=m" >> $D
+          echo "CONFIG_MAC80211=m" >> $D
+          echo "CONFIG_MAC80211_MESH=m" >> $D
+          echo "CONFIG_CFG80211_WEXT=m" >> $D
+          echo "CONFIG_RFKILL=m" >> $D
+          # 主线支持 + 可监听/注入的 USB 网卡
+          echo "CONFIG_WLAN_VENDOR_ATH=y" >> $D
+          echo "CONFIG_ATH9K_HTC=m" >> $D
+          echo "CONFIG_CARL9170=m" >> $D
+          echo "CONFIG_WLAN_VENDOR_RALINK=y" >> $D
+          echo "CONFIG_RT2X00=m" >> $D
+          echo "CONFIG_RT2800USB=m" >> $D
+          echo "CONFIG_RT73USB=m" >> $D
+          echo "CONFIG_WLAN_VENDOR_REALTEK=y" >> $D
+          echo "CONFIG_RTL8187=m" >> $D
+          echo "CONFIG_RTL8XXXU=m" >> $D
+          echo "CONFIG_WLAN_VENDOR_MEDIATEK=y" >> $D
+          echo "CONFIG_MT7601U=m" >> $D
+          # 驱动运行时需要从 /vendor/firmware 找 .fw，用户侧自行放置
+          echo "已配置，等待编译阶段执行 make modules"
+
       - name: 启用三星SSG IO调度器
         if: inputs.ssg_enable
         run: |
@@ -689,6 +722,19 @@ jobs:
           sudo rm -rf /opt/hostedtoolcache/CodeQL &
           make -j$(nproc --all) LLVM=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC="ccache clang" LD="ld.lld" HOSTLD=ld.lld O=out KCFLAGS+=-O2 KCFLAGS+=-Wno-error gki_defconfig &&
           make -j$(nproc --all) LLVM=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC="$(pwd)/cc-wrapper" LD="$(pwd)/ld-wrapper" HOSTLD=ld.lld O=out KCFLAGS+=-O2 KCFLAGS+=-Wno-error Image
+
+          # 额外编译 USB 无线网卡驱动模块（不参与 AnyKernel3 打包，单独出 .ko）
+          if [[ "${{ inputs.wifi_modules }}" == "true" ]]; then
+            echo ">>> 开始编译 modules (USB 无线网卡驱动)"
+            make -j$(nproc --all) LLVM=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+                 CC="$(pwd)/cc-wrapper" LD="$(pwd)/ld-wrapper" HOSTLD=ld.lld \
+                 O=out KCFLAGS+=-O2 KCFLAGS+=-Wno-error modules || echo "!! make modules 失败"
+            echo ">>> 产出的无线相关 .ko:"
+            find out -name '*.ko' \( -name 'ath9k*' -o -name 'rt2*' -o -name 'rt73*' \
+                 -o -name 'rtl8187*' -o -name 'rtl8xxxu*' -o -name 'mt7601u*' \
+                 -o -name 'carl9170*' -o -name 'cfg80211*' -o -name 'mac80211*' \
+                 -o -name 'rfkill*' -o -name 'eeprom_93cx6*' \) | sort
+          fi
           
           # 编译后时间劫持二次校验
           echo "--- 编译后环境时间: $(LD_PRELOAD=$PRELOAD_LIBS date) ---"
@@ -699,6 +745,38 @@ jobs:
           ccache -s
           echo "编译后空间:"
           df -h
+
+      - name: 打包 USB 无线网卡驱动模块与固件
+        if: ${{ inputs.wifi_modules }}
+        run: |
+          cd kernel_workspace
+          rm -rf wifi-modules && mkdir -p wifi-modules
+          n=0
+          while IFS= read -r k; do
+            cp "$k" wifi-modules/ && n=$((n+1))
+          done < <(find common/out -name '*.ko' \( -name 'ath9k*' -o -name 'rt2*' -o -name 'rt73*' \
+                    -o -name 'rtl8187*' -o -name 'rtl8xxxu*' -o -name 'mt7601u*' \
+                    -o -name 'carl9170*' -o -name 'cfg80211*' -o -name 'mac80211*' \
+                    -o -name 'rfkill*' -o -name 'eeprom_93cx6*' \) | sort)
+          echo ">>> 收集到 $n 个 .ko"
+          ls -la wifi-modules/ || true
+          # 固件（从 linux-firmware 拉取，放 /vendor/firmware 后驱动即可加载）
+          FW=https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/plain
+          for f in ath9k_htc/htc_7010-1.4.0.fw ath9k_htc/htc_9271-1.4.0.fw carl9170-1.fw \
+                   rt2870.bin rt73.bin mt7601u.bin rtlwifi/rtl8188efw.bin rtlwifi/rtl8192cufw.bin; do
+            mkdir -p "wifi-modules/firmware/$(dirname "$f")"
+            curl -sSL --retry 3 -o "wifi-modules/firmware/$f" "$FW/$f" \
+              && echo "  fw ok: $f" || echo "  fw FAIL: $f"
+          done
+          tar czf wifi-modules-6.1.141.tar.gz -C wifi-modules .
+          ls -la wifi-modules-6.1.141.tar.gz
+
+      - name: 上传无线驱动模块工件
+        if: ${{ inputs.wifi_modules }}
+        uses: actions/upload-artifact@v7
+        with:
+          path: ${{ github.workspace }}/kernel_workspace/wifi-modules-6.1.141.tar.gz
+          archive: false
 
       - name: 保存新的 ccache 缓存
         if: ${{ !inputs.no_ccache && (inputs.ccache_update || steps.ccache-restore.outputs.cache-hit != 'true') }}
