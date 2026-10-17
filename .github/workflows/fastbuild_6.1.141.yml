@@ -95,6 +95,20 @@ on:
         required: false
         type: boolean
         default: 'false'
+      limit_opts:
+        description: '资源限制项: both=CPU限制+进程数限制(全绿但会改struct cfs_rq布局,原厂调度模块会挂) / pids=只开进程数限制(安全) / none=都不开'
+        required: false
+        type: choice
+        options:
+          - 'both'
+          - 'pids'
+          - 'none'
+        default: 'both'
+      panic_on_hang:
+        description: '把软/硬锁死与hung task 都变成 panic(用于抓挂死日志: panic 后 ramoops 才会落盘到 /data/debugging/last_kmsg.txt)'
+        required: false
+        type: boolean
+        default: 'false'
       kernel_suffix:
         description: '内核后缀(留空默认,开头别加连字符,勿加空格等影响指令运行的保留字符)'
         required: false
@@ -505,14 +519,38 @@ jobs:
             echo "CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y" >> ./arch/arm64/configs/gki_defconfig
             echo "CONFIG_NETFILTER_XT_TARGET_LOG=y" >> ./arch/arm64/configs/gki_defconfig
             echo "CONFIG_NETFILTER_XT_MATCH_RECENT=y" >> ./arch/arm64/configs/gki_defconfig
-            # ===== Droidspaces v7 自检全绿所需的三项(原脚本缺失,导致 macvlan/CPU限制/进程数限制 报✗) =====
-            # Macvlan 支持(--net=macvlan)；必须内建=y，写成模块不会被自动加载
+            # ===== Droidspaces v7 自检全绿所需(原脚本缺失,导致 macvlan/CPU限制/进程数限制 报✗) =====
+            # Macvlan 支持(--net=macvlan)；必须内建=y，写成模块不会被自动加载。官方文档确认 kABI 安全
             echo "CONFIG_MACVLAN=y" >> ./arch/arm64/configs/gki_defconfig
-            # CPU 限制支持(--cpus -> cpu.max)；依赖 CGROUP_SCHED + FAIR_GROUP_SCHED(GKI 已开启)
-            # 注意：内核 cmdline 不能带 cgroup_disable=cpu(本机 cmdline 只有 cgroup_disable=pressure，安全)
-            echo "CONFIG_CFS_BANDWIDTH=y" >> ./arch/arm64/configs/gki_defconfig
-            # 进程数限制支持(--pids-limit -> pids.max)
-            echo "CONFIG_CGROUP_PIDS=y" >> ./arch/arm64/configs/gki_defconfig
+            # limit_opts 控制这两项(实测 CFS_BANDWIDTH 会改变 struct cfs_rq 布局，
+            # 导致原厂第一阶段模块 sched-walt.ko / oplus_bsp_task_overload.ko(引用 runqueues)
+            # 按老偏移读写调度器结构 -> 早期挂死 -> 看门狗复位，无 panic 记录)
+            case "${{ github.event.inputs.limit_opts }}" in
+              pids)
+                echo ">>> limit_opts=pids : 只开 CONFIG_CGROUP_PIDS(进程数限制)，跳过 CFS_BANDWIDTH(CPU限制)"
+                echo "CONFIG_CGROUP_PIDS=y" >> ./arch/arm64/configs/gki_defconfig
+                ;;
+              none)
+                echo ">>> limit_opts=none : CPU限制/进程数限制 都不开"
+                ;;
+              *)
+                echo ">>> limit_opts=both : CPU限制 + 进程数限制 都开"
+                # CPU 限制(--cpus -> cpu.max)；依赖 CGROUP_SCHED + FAIR_GROUP_SCHED(GKI 已开)
+                echo "CONFIG_CFS_BANDWIDTH=y" >> ./arch/arm64/configs/gki_defconfig
+                echo "CONFIG_CGROUP_PIDS=y" >> ./arch/arm64/configs/gki_defconfig
+                ;;
+            esac
+            # ===== 把"挂住"变成"panic"，否则看门狗硬复位不会留下任何日志 =====
+            # panic 后 ramoops 的 console 区落盘 -> /sys/fs/pstore/console-ramoops-0
+            # -> Android init 自动 copy 到 /data/debugging/last_kmsg.txt
+            if [[ "${{ inputs.panic_on_hang }}" == "true" ]]; then
+              echo ">>> panic_on_hang=true : 软/硬锁死与 hung task 一律 panic(用于抓挂死日志)"
+              echo "CONFIG_PANIC_ON_OOPS=y" >> ./arch/arm64/configs/gki_defconfig
+              echo "CONFIG_PANIC_TIMEOUT=0" >> ./arch/arm64/configs/gki_defconfig
+              echo "CONFIG_BOOTPARAM_SOFTLOCKUP_PANIC=y" >> ./arch/arm64/configs/gki_defconfig
+              echo "CONFIG_BOOTPARAM_HARDLOCKUP_PANIC=y" >> ./arch/arm64/configs/gki_defconfig
+              echo "CONFIG_BOOTPARAM_HUNG_TASK_PANIC=y" >> ./arch/arm64/configs/gki_defconfig
+            fi
             # 未经测试的配置选项，可能导致bug
             #echo "CONFIG_CGROUP_DEVICE=y" >> ./arch/arm64/configs/gki_defconfig
             #echo "CONFIG_FW_LOADER_COMPRESS=y" >> ./arch/arm64/configs/gki_defconfig
