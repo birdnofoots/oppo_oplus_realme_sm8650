@@ -313,13 +313,26 @@ if [[ "$APPLY_DROIDSPACES" == [sSeE] ]]; then
   echo "CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y" >> "$DEFCONFIG_FILE"
   echo "CONFIG_NETFILTER_XT_TARGET_LOG=y" >> "$DEFCONFIG_FILE"
   echo "CONFIG_NETFILTER_XT_MATCH_RECENT=y" >> "$DEFCONFIG_FILE"
-  # ===== Droidspaces v7 自检全绿所需的三项 =====
-  # Macvlan 支持(--net=macvlan)；必须内建=y，模块形式不会被自动加载
+  # ===== Droidspaces v7 自检项 =====
+  # Macvlan 支持(--net=macvlan)；必须内建=y，模块形式不会被自动加载。
+  # 实测对 ABI 零影响（导出符号 CRC 变化 0 个），安全。
   echo "CONFIG_MACVLAN=y" >> "$DEFCONFIG_FILE"
+  # 下面两项默认关闭，原因（实测，详见 docs/DROIDSPACES-V7.md）：
+  #   CGROUP_PIDS   -> 5648 个导出符号 CRC 变化，需配合 check_version() 绕过；
+  #   CFS_BANDWIDTH -> 还会真正改变 struct rq / cfs_rq 布局，导致原厂第一阶段模块
+  #                    sched-walt.ko / oplus_bsp_task_overload.ko(引用全局 runqueues)
+  #                    按旧偏移读写调度器结构 -> 早期挂死 -> 看门狗复位(无 panic 日志)。
+  #   两者合并开启实测循环重启。要全绿必须把这些源内模块一起重编并重打包 vendor_boot。
   # CPU 限制支持(--cpus -> cpu.max)；依赖 CGROUP_SCHED + FAIR_GROUP_SCHED(GKI 已开启)
-  echo "CONFIG_CFS_BANDWIDTH=y" >> "$DEFCONFIG_FILE"
+  #echo "CONFIG_CFS_BANDWIDTH=y" >> "$DEFCONFIG_FILE"
   # 进程数限制支持(--pids-limit -> pids.max)
-  echo "CONFIG_CGROUP_PIDS=y" >> "$DEFCONFIG_FILE"
+  #echo "CONFIG_CGROUP_PIDS=y" >> "$DEFCONFIG_FILE"
+  # 需要抓「挂死」现场时打开：把软/硬锁死与 hung task 变成 panic，
+  # panic 后 ramoops 落盘 -> Android init 复制到 /data/debugging/last_kmsg.txt
+  #echo "CONFIG_PANIC_ON_OOPS=y" >> "$DEFCONFIG_FILE"
+  #echo "CONFIG_BOOTPARAM_SOFTLOCKUP_PANIC=y" >> "$DEFCONFIG_FILE"
+  #echo "CONFIG_BOOTPARAM_HARDLOCKUP_PANIC=y" >> "$DEFCONFIG_FILE"
+  #echo "CONFIG_BOOTPARAM_HUNG_TASK_PANIC=y" >> "$DEFCONFIG_FILE"
   # 开启 NTSync
   echo "CONFIG_NTSYNC=y" >> "$DEFCONFIG_FILE"
   cd common
@@ -334,6 +347,12 @@ if [[ "$APPLY_DROIDSPACES" == [sSeE] ]]; then
   wget https://github.com/cctv18/oppo_oplus_realme_sm8650/raw/refs/heads/main/droidspaces_patch/ntsync_compat_android14-6.1.patch
   patch -p1 -F 3 < ntsync_base.patch || true
   patch -p1 -F 3 < ntsync_compat_android14-6.1.patch || true
+  # 绕过模块符号 CRC 校验：开启 CFS_BANDWIDTH/CGROUP_PIDS 后 genksyms CRC 大面积变化，
+  # 原厂预编译模块会被 "disagrees about version of symbol" 拒收 -> 开机循环
+  cp "$SCRIPT_DIR/droidspaces_patch/fix_module_crc_check.patch" . 2>/dev/null || \
+    wget https://github.com/birdnofoots/oppo_oplus_realme_sm8650/raw/refs/heads/main/droidspaces_patch/fix_module_crc_check.patch
+  patch -p1 -F 3 < fix_module_crc_check.patch || true
+  grep -q "kABI shim" kernel/module/version.c || { echo "!! kABI shim 补丁未生效"; exit 1; }
   cd ..
   if [[ "$APPLY_DROIDSPACES" == [eE] ]]; then
     echo "正在启用容器环境扩展支持..."
