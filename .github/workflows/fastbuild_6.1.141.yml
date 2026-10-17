@@ -730,10 +730,9 @@ jobs:
                  CC="$(pwd)/cc-wrapper" LD="$(pwd)/ld-wrapper" HOSTLD=ld.lld \
                  O=out KCFLAGS+=-O2 KCFLAGS+=-Wno-error modules || echo "!! make modules 失败"
             echo ">>> 产出的无线相关 .ko:"
-            find out -name '*.ko' \( -name 'ath9k*' -o -name 'rt2*' -o -name 'rt73*' \
-                 -o -name 'rtl8187*' -o -name 'rtl8xxxu*' -o -name 'mt7601u*' \
-                 -o -name 'carl9170*' -o -name 'cfg80211*' -o -name 'mac80211*' \
-                 -o -name 'rfkill*' -o -name 'eeprom_93cx6*' \) | sort
+            find out -name '*.ko' \( -path '*/drivers/net/wireless/*' \
+                 -o -name 'cfg80211*' -o -name 'mac80211*' -o -name 'rfkill*' \
+                 -o -name 'crc-itu-t*' -o -name 'eeprom_93cx6*' \) | sort
           fi
           
           # 编译后时间劫持二次校验
@@ -754,10 +753,9 @@ jobs:
           n=0
           while IFS= read -r k; do
             cp "$k" wifi-modules/ && n=$((n+1))
-          done < <(find common/out -name '*.ko' \( -name 'ath9k*' -o -name 'rt2*' -o -name 'rt73*' \
-                    -o -name 'rtl8187*' -o -name 'rtl8xxxu*' -o -name 'mt7601u*' \
-                    -o -name 'carl9170*' -o -name 'cfg80211*' -o -name 'mac80211*' \
-                    -o -name 'rfkill*' -o -name 'eeprom_93cx6*' \) | sort)
+          done < <(find common/out -name '*.ko' \( -path '*/drivers/net/wireless/*' \
+                    -o -name 'cfg80211*' -o -name 'mac80211*' -o -name 'rfkill*' \
+                    -o -name 'crc-itu-t*' -o -name 'eeprom_93cx6*' \) | sort)
           echo ">>> 收集到 $n 个 .ko"
           ls -la wifi-modules/ || true
           # 固件（从 linux-firmware 拉取，放 /vendor/firmware 后驱动即可加载）
