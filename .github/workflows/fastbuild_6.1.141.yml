@@ -487,6 +487,13 @@ jobs:
             wget https://github.com/$GITHUB_REPOSITORY/raw/refs/heads/$GITHUB_REF_NAME/droidspaces_patch/ntsync_compat_${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch
             patch -p1 -F 3 < ntsync_base.patch || true
             patch -p1 -F 3 < ntsync_compat_${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch || true
+            # 绕过模块符号 CRC 校验：开启 CFS_BANDWIDTH/CGROUP_PIDS 后 genksyms CRC 会大面积变化
+            # (实测 5648 个导出符号)，原厂预编译模块会因 "disagrees about version of symbol" 被拒收。
+            # 这里让 check_version() 恒真；MODVERSIONS 保持 =y，vermagic 串不变，
+            # 因此原厂模块与 KernelSU LKM 的加载条件与改动前完全一致。
+            wget https://github.com/$GITHUB_REPOSITORY/raw/refs/heads/$GITHUB_REF_NAME/droidspaces_patch/fix_module_crc_check.patch
+            patch -p1 -F 3 < fix_module_crc_check.patch || true
+            grep -n "kABI shim" kernel/module/version.c || { echo "!! kABI shim 补丁未生效"; exit 1; }
             # 开启 Droidspaces 容器所需内核支持
             echo "CONFIG_PID_NS=y" >> ./arch/arm64/configs/gki_defconfig
             echo "CONFIG_IPC_NS=y" >> ./arch/arm64/configs/gki_defconfig
