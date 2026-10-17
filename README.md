@@ -13,6 +13,35 @@
 - 绿厂官方摆烂，代码开源开一半，导致部分内核代码无法通过已有的配置xml正常编译，甚至没有编译配置xml；
 - 官方使用的 Bazel 编译器过于不稳定且低效，容易出现各种各样莫名其妙的错误，且全网几乎找不到任何有效解决方法，对于新手极不友好；
 - 由于绿厂魔改内核f2fs代码，导致欧加真机型刷入GKI内核后不清空data分区就无法正常开机。
+## ⭐ 本仓库(fork)的额外产出：一加12 Pro + Droidspaces v7 + BBR
+
+面向 **一加12 Pro（SM8650 / `6.1.141`）** 的 Droidspaces v7 适配，详细过程与实测数据见
+**[docs/DROIDSPACES-V7.md](docs/DROIDSPACES-V7.md)**；成品在 **[Releases](../../releases)**。
+
+| Droidspaces v7 自检项 | 状态 |
+|---|---|
+| 必需项（Root / PID·Mount·UTS·IPC ns / pivot_root / proc / sys / Seccomp） | ✅ |
+| 推荐项（epoll / signalfd / PTY / devpts / Loop / ext4 / cgroup v2 / cgroup ns / devtmpfs） | ✅ |
+| 网络（netns / veth / bridge / IPv6 NAT / **Macvlan**） | ✅ |
+| OverlayFS / FUSE / TUN·TAP / user ns / 内存限制 / CPU 用量统计 | ✅ |
+| **BBR / Brutal / Vegas / NV / Westwood+ / HTCP** | ✅ 已编入（默认仍 cubic，`sysctl` 一键切） |
+| CPU 限制（`--cpus`）/ 进程数限制（`--pids-limit`） | ⚠️ 未开启，原因见下 |
+
+> **为什么 `CFS_BANDWIDTH` / `CGROUP_PIDS` 暂不开启（重要）**
+>
+> 实测（`no_ccache` 全新编译，已排除缓存干扰）：开 `CGROUP_PIDS` 会让 **5648 个导出符号 CRC 变化**；
+> `CFS_BANDWIDTH` 在此基础上还会真正改变 `struct rq` / `cfs_rq` 布局（`runqueues` 的 CRC 都变了）。
+> 原厂第一阶段模块 `sched-walt.ko`、`oplus_bsp_task_overload.ko`（直接引用全局 `runqueues`）
+> 会按旧偏移读写调度器结构 → 早期挂死 → 看门狗硬复位，**且不产生 panic 日志**（因为不是 panic）。
+> 两者合并开启的版本实测**循环重启**，已从本仓库移除。
+>
+> 要「全绿」必须同时把 `sched-walt` / `oplus_bsp_task_overload` / `oplus_bsp_schedinfo` /
+> `oplus_bsp_frame_boost` / `oplus_bsp_qos_sched` / `msm_performance` 从同源重编并重打包进 `vendor_boot`。
+> 而 `MACVLAN` + 全部拥塞控制算法对 ABI **零影响**（实测导出符号 CRC 变化 **0 个**），所以先把这两项做稳。
+
+工作流新增参数：`no_ccache`（强制全新编译）、`limit_opts`（`both`/`pids`/`none`）、
+`panic_on_hang`（把软/硬锁死与 hung task 变成 panic，用于抓挂死日志）。
+
 ## 本项目的主要内容(及计划)
 - 提供 OKI（官方源码）/ GKI（谷歌通用内核源码）双编译模式，OKI保留官方驱动/调度，GKI兼容性更强（无需相同内核小版本即可刷入）；
 - 为 GKI 移植官方内核的f2fs源码，使 GKI 内核可以和官方 OKI 内核一样，刷入后可保留数据正常开机，不需要清空data ~~（新建文件夹）~~；
