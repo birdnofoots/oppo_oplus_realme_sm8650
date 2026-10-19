@@ -595,10 +595,18 @@ jobs:
           echo "CONFIG_WLAN_VENDOR_RALINK=y" >> $D
           echo "CONFIG_RT2X00=m" >> $D
           echo "CONFIG_RT2800USB=m" >> $D
+          # 与 mars los104 对齐：RT5370(RT53XX)/RT5572(RT55XX)/RT3573 等子选项（bool，必须 =y）
+          echo "CONFIG_RT2800USB_RT33XX=y" >> $D
+          echo "CONFIG_RT2800USB_RT35XX=y" >> $D
+          echo "CONFIG_RT2800USB_RT3573=y" >> $D
+          echo "CONFIG_RT2800USB_RT53XX=y" >> $D
+          echo "CONFIG_RT2800USB_RT55XX=y" >> $D
+          echo "CONFIG_RT2800USB_UNKNOWN=y" >> $D
           echo "CONFIG_RT73USB=m" >> $D
           echo "CONFIG_WLAN_VENDOR_REALTEK=y" >> $D
           echo "CONFIG_RTL8187=m" >> $D
           echo "CONFIG_RTL8XXXU=m" >> $D
+          echo "CONFIG_RTL8XXXU_UNTESTED=y" >> $D
           echo "CONFIG_WLAN_VENDOR_MEDIATEK=y" >> $D
           echo "CONFIG_MT7601U=m" >> $D
           # 驱动运行时需要从 /vendor/firmware 找 .fw，用户侧自行放置
