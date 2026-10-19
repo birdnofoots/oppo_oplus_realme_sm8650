@@ -586,6 +586,11 @@ jobs:
           echo "CONFIG_CFG80211=m" >> $D
           echo "CONFIG_MAC80211=m" >> $D
           echo "CONFIG_MAC80211_MESH=m" >> $D
+          # 原厂 mac80211 没导出 LED 触发器符号（__ieee80211_*led*），驱动必须同样不引用，
+          # 否则 insmod 报 Unknown symbol（实测 rt2x00lib / ath9k_htc 因此加载失败）
+          sed -i '/select MAC80211_LEDS/d' drivers/net/wireless/ath/ath9k/Kconfig
+          echo "# CONFIG_MAC80211_LEDS is not set" >> $D
+          echo "# CONFIG_RT2X00_LIB_LEDS is not set" >> $D
           echo "CONFIG_CFG80211_WEXT=m" >> $D
           echo "CONFIG_RFKILL=m" >> $D
           # 主线支持 + 可监听/注入的 USB 网卡
